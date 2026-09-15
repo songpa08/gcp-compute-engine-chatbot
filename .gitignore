@@ -1,23 +1,40 @@
-# Environment variables & API Keys (중요: 키 및 민감정보 보호)
+# ========================================================
+# 1. 보안 자격증명 및 API 키 (Secret & Credentials) - 절대 업로드 금지!
+# ========================================================
 .env
+.env.*
+*.env
 .env.local
 .env.*.local
-*.env
-*.pem
-*.key
+
+# GCP / 클라우드 서비스 계정 키 파일
 *service-account*.json
+*service_account*.json
 credentials.json
+*credentials*.json
+*secret*.json
+client_secret*.json
+gcp-key*.json
+*-sa.json
+*.keyfile
 
-# Python bytecode & cache
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.pytest_cache/
-.coverage
-htmlcov/
+# SSL/TLS 비공개키, 인증서 및 SSH 키
+*.key
+*.pem
+*.crt
+*.csr
+*.pfx
+*.p12
+*.der
+*.cer
+id_rsa*
+id_ed25519*
+*.ppk
+known_hosts
 
-# Virtual Environments
+# ========================================================
+# 2. Python 가상환경 및 바이트코드 (Virtualenv & Cache)
+# ========================================================
 venv/
 .venv/
 env/
@@ -25,20 +42,55 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDE & Editors
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Operating System
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Logs & temp
+# ========================================================
+# 3. 로그 및 임시 파일 (Logs & Temporary Files)
+# ========================================================
 *.log
 logs/
+log/
 tmp/
 temp/
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# ========================================================
+# 4. IDE 및 운영체제 메타데이터 (IDE & OS Specifics)
+# ========================================================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini

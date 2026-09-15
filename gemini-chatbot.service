@@ -1,0 +1,16 @@
+[Unit]
+Description=Google Gemini Interactions Web Chatbot Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/gemini-chatbot
+ExecStart=/opt/gemini-chatbot/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000 --workers 2
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/gemini-chatbot.log
+StandardError=append:/var/log/gemini-chatbot.error.log
+
+[Install]
+WantedBy=multi-user.target

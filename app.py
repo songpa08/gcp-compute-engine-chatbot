@@ -42,6 +42,57 @@ class ChatRequest(BaseModel):
     message: str
     model: Optional[str] = "models/gemini-3.8-flash"
 
+# Secret Manager 캐시
+CACHED_API_KEY = None
+
+def get_gemini_api_key() -> str:
+    """
+    1. 환경변수 확인
+    2. GCP Secret Manager (projects/298843281819/secrets/GEMINI_API_KEY) 확인
+    """
+    global CACHED_API_KEY
+    if CACHED_API_KEY:
+        return CACHED_API_KEY
+
+    # 1. 환경변수 확인
+    env_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if env_key:
+        CACHED_API_KEY = env_key
+        return CACHED_API_KEY
+
+    # 2. GCP Secret Manager SDK로 가져오기 (GCP VM 메타데이터 인증 기반)
+    try:
+        from google.cloud import secretmanager
+        sm_client = secretmanager.SecretManagerServiceClient()
+        secret_name = "projects/298843281819/secrets/GEMINI_API_KEY/versions/latest"
+        response = sm_client.access_secret_version(request={"name": secret_name})
+        secret_val = response.payload.data.decode("utf-8").strip()
+        if secret_val:
+            os.environ["GEMINI_API_KEY"] = secret_val
+            CACHED_API_KEY = secret_val
+            print(f"[Secret Manager] Loaded GEMINI_API_KEY from {secret_name}")
+            return CACHED_API_KEY
+    except Exception as e:
+        print(f"[Secret Manager] Notice: Unable to load via SDK: {e}")
+
+    # 3. gcloud CLI 서브프로세스 폴백 (로컬 CLI 환경 등)
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["gcloud", "secrets", "versions", "access", "latest", "--secret=GEMINI_API_KEY", "--project=iceu-songpa08"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True, shell=True
+        )
+        val = res.stdout.strip()
+        if val:
+            os.environ["GEMINI_API_KEY"] = val
+            CACHED_API_KEY = val
+            print("[Secret Manager] Loaded GEMINI_API_KEY via gcloud CLI fallback")
+            return CACHED_API_KEY
+    except Exception as sub_err:
+        print(f"[Secret Manager] Warning: Failed gcloud CLI fallback: {sub_err}")
+
+    return ""
+
 @app.get("/api/models")
 async def get_models():
     return {
@@ -51,16 +102,16 @@ async def get_models():
 
 @app.get("/api/health")
 async def health():
-    has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
-    return {"status": "ok", "has_api_key": has_key}
+    key = get_gemini_api_key()
+    return {"status": "ok", "has_api_key": bool(key)}
 
 def run_gemini_interaction(user_input: str, model_name: str):
     """
     사용자가 지정한 interactions.create 코드를 정확히 실행하는 챗봇 엔진 함수
     """
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    api_key = get_gemini_api_key()
     if not api_key:
-        raise ValueError("GEMINI_API_KEY 환경변수가 설정되어 있지 않습니다.")
+        raise ValueError("GEMINI_API_KEY를 환경변수 또는 Secret Manager에서 찾을 수 없습니다.")
 
     # 1. Client 초기화
     client = genai.Client(
@@ -120,7 +171,6 @@ def run_gemini_interaction(user_input: str, model_name: str):
         if hasattr(step, 'content'):
             for c in step.content:
                 if hasattr(c, 'annotations') and c.annotations:
-                    # annotations 내 출처 정보 확인
                     for ann in c.annotations:
                         uri = getattr(ann, 'uri', None)
                         title = getattr(ann, 'title', None) or uri
@@ -141,7 +191,6 @@ async def chat_endpoint(request: ChatRequest):
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="메시지가 비어있습니다.")
 
-    # 모델 ID 표준화
     model_name = request.model
     if not model_name.startswith("models/"):
         model_name = f"models/{model_name}"
@@ -179,5 +228,6 @@ async def serve_index():
     return {"message": "Gemini Chatbot Web Service is running."}
 
 if __name__ == "__main__":
+    # pyrefly: ignore [missing-import]
     import uvicorn
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
