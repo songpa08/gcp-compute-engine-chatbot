@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Gemini</title>
+  <!-- Google Fonts: Google Sans & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Highlight.js for code block syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  
+  <!-- Marked.js for markdown rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+  
+  <!-- DOMPurify for XSS sanitization -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.9/purify.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="gemini-app">
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="gemini-logo">
+          <svg class="sparkle-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14 0C14 7.732 7.732 14 0 14C7.732 14 14 20.268 14 28C14 20.268 20.268 14 28 14C20.268 14 14 7.732 14 0Z" fill="url(#sparkle_grad)"/>
+            <defs>
+              <linearGradient id="sparkle_grad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#4285F4"/>
+                <stop offset="0.5" stop-color="#9B72CB"/>
+                <stop offset="1" stop-color="#D96570"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="logo-text">Gemini</span>
+        </div>
+        
+        <!-- Header Model Indicator -->
+        <div class="active-model-badge" id="activeModelBadge">
+          <span id="headerModelName">Flash 3.8</span>
+          <i data-lucide="chevron-down" class="badge-chevron"></i>
+        </div>
+
+        <!-- Search Status Indicator -->
+        <div class="search-status-pill" id="searchStatusPill" title="실시간 웹 검색 활성화 상태">
+          <i data-lucide="globe"></i>
+          <span>실시간 웹 검색 ON</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button id="newChatBtn" class="icon-action-btn" title="새 대화 시작">
+          <i data-lucide="square-pen"></i>
+          <span>새 대화</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container" id="mainContainer">
+      <!-- Welcome Hero Section (초기 화면) -->
+      <section class="welcome-hero" id="welcomeHero">
+        <div class="hero-content">
+          <h1 class="hero-title">무엇에 집중해 볼까요?</h1>
+          <p class="hero-subtitle">Gemini 3.8 Flash 및 실시간 구글 웹 검색을 통해 최신 정보와 인사이트를 찾아보세요.</p>
+        </div>
+      </section>
+
+      <!-- Chat Messages Container (대화 진행 시 표시) -->
+      <section class="chat-messages" id="chatMessages" style="display: none;">
+        <!-- 메시지들이 동적으로 삽입됩니다 -->
+      </section>
+    </main>
+
+    <!-- Input Footer Bar (하단 고정) -->
+    <footer class="input-section" id="inputSection">
+      <div class="input-bar-wrapper">
+        <!-- 둥근 캡슐형 입력창 (Pill shape) -->
+        <div class="gemini-input-pill" id="inputPill">
+          
+          <!-- 좌측: + 버튼, 방패 아이콘, 웹 검색 토글 버튼 -->
+          <div class="pill-left">
+            <button class="pill-btn add-btn" id="addBtn" title="새 대화 시작">
+              <i data-lucide="plus"></i>
+            </button>
+            
+            <!-- 웹 검색 토글 버튼 (지구본) -->
+            <button class="pill-btn search-toggle-btn active" id="searchToggleBtn" title="실시간 웹 검색 켜짐/꺼짐 토글">
+              <i data-lucide="globe"></i>
+            </button>
+
+            <div class="shield-icon" title="보안 데이터 보호">
+              <i data-lucide="shield-check"></i>
+            </div>
+          </div>
+
+          <!-- 중앙: 텍스트 입력창 -->
+          <div class="pill-center">
+            <textarea
+              id="userInput"
+              placeholder="Gemini에게 물어보기 (인터넷 검색 지원)"
+              rows="1"
+              autofocus
+            ></textarea>
+          </div>
+
+          <!-- 우측: 모델 선택기, 마이크, 전송 버튼 -->
+          <div class="pill-right">
+            <!-- 모델 선택 드롭다운 토글 버튼 -->
+            <div class="model-dropdown-container">
+              <button class="model-select-btn" id="modelSelectBtn" type="button">
+                <span id="selectedModelLabel">Flash</span>
+                <i data-lucide="chevron-down" class="dropdown-arrow"></i>
+              </button>
+
+              <!-- 모델 선택 팝업 메뉴 -->
+              <div class="model-dropdown-menu" id="modelDropdownMenu">
+                <div class="dropdown-header">모델 선택</div>
+                <div class="model-option active" data-model="models/gemini-3.8-flash" data-badge="Flash 3.8">
+                  <div class="model-opt-info">
+                    <div class="model-opt-title">
+                      <span>Gemini 3.8 Flash</span>
+                      <span class="opt-tag default-tag">기본</span>
+                    </div>
+                    <div class="model-opt-desc">최신 초고속 모델 + 실시간 구글 검색</div>
+                  </div>
+                  <i data-lucide="check" class="opt-check"></i>
+                </div>
+                <div class="model-option" data-model="models/gemini-3.7-flash" data-badge="Flash 3.7">
+                  <div class="model-opt-info">
+                    <div class="model-opt-title">
+                      <span>Gemini 3.7 Flash</span>
+                    </div>
+                    <div class="model-opt-desc">고성능 하이브리드 추론 및 빠른 속도</div>
+                  </div>
+                  <i data-lucide="check" class="opt-check" style="display: none;"></i>
+                </div>
+              </div>
+            </div>
+
+            <!-- 마이크 음성 입력 버튼 -->
+            <button class="pill-btn mic-btn" id="micBtn" title="음성으로 입력">
+              <i data-lucide="mic"></i>
+            </button>
+
+            <!-- 전송 버튼 -->
+            <button class="pill-btn send-btn" id="sendBtn" title="전송" disabled>
+              <i data-lucide="arrow-up"></i>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- 검색창 밑 4개 추천 셀 (시간 관리 루틴 제안, 비동기 파이썬 코드 작성, 클라우드 아키텍처 전략, 프로젝트 기회 요약문) -->
+        <div class="suggestion-cells-container" id="suggestionCells">
+          <!-- 셀 1: 시간 관리 루틴 제안 -->
+          <button class="suggestion-cell" data-prompt="생산성을 극대화하고 집중력을 높일 수 있는 실천적인 시간 관리 루틴과 하루 일과 계획을 제안해줘.">
+            <div class="cell-icon-box clock-theme">
+              <i data-lucide="clock"></i>
+            </div>
+            <div class="cell-content">
+              <span class="cell-title">시간 관리 루틴 제안</span>
+              <span class="cell-desc">하루 집중 루틴 및 계획</span>
+            </div>
+          </button>
+
+          <!-- 셀 2: 비동기 파이썬 코드 작성 -->
+          <button class="suggestion-cell" data-prompt="Python asyncio와 aiohttp를 활용하여 고성능 비동기 API 요청 및 데이터 처리 파이프라인 코드 예시를 작성해줘.">
+            <div class="cell-icon-box code-theme">
+              <i data-lucide="code-2"></i>
+            </div>
+            <div class="cell-content">
+              <span class="cell-title">비동기 파이썬 코드 작성</span>
+              <span class="cell-desc">asyncio 고성능 코드 예시</span>
+            </div>
+          </button>
+
+          <!-- 셀 3: 클라우드 아키텍처 전략 -->
+          <button class="suggestion-cell" data-prompt="GCP 클라우드 환경에서 고가용성, 탄력성 및 비용 최적화를 달성하기 위한 핵심 클라우드 아키텍처 전략을 설명해줘.">
+            <div class="cell-icon-box cloud-theme">
+              <i data-lucide="cloud"></i>
+            </div>
+            <div class="cell-content">
+              <span class="cell-title">클라우드 아키텍처 전략</span>
+              <span class="cell-desc">GCP 고가용성 & 비용 최적화</span>
+            </div>
+          </button>
+
+          <!-- 셀 4: 프로젝트 기회 요약문 -->
+          <button class="suggestion-cell" data-prompt="새로운 AI 프로젝트의 핵심 가치 제안, 비즈니스 기회, 시장 경쟁력을 명확하게 정리한 프로젝트 기회 요약문을 작성해줘.">
+            <div class="cell-icon-box spark-theme">
+              <i data-lucide="sparkles"></i>
+            </div>
+            <div class="cell-content">
+              <span class="cell-title">프로젝트 기회 요약문</span>
+              <span class="cell-desc">AI 비즈니스 가치 & 기회 요약</span>
+            </div>
+          </button>
+        </div>
+
+        <div class="input-disclaimer">
+          Gemini는 실수를 할 수 있습니다. 검색된 웹페이지 링크와 중요한 정보는 재확인하세요.
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
