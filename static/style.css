@@ -171,6 +171,21 @@ body {
   position: relative;
   padding: 0 16px 200px 16px;
   scroll-behavior: smooth;
+  transition: all 0.3s ease;
+}
+
+/* 초기 화면 (대화 시작 전): 헤더 아래 적당한 상단 여백 후 자연스럽게 수직 배치 */
+.gemini-app:not(.has-chat) {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.gemini-app:not(.has-chat) .main-container {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding: 7vh 16px 0 16px;
+  margin: 0;
 }
 
 /* Welcome Hero (Initial screen) */
@@ -185,19 +200,26 @@ body {
   animation: fadeIn 0.4s ease forwards;
 }
 
+.gemini-app:not(.has-chat) .welcome-hero {
+  flex: none;
+  padding: 0 16px 28px 16px;
+  margin: 0;
+}
+
 .hero-title {
   font-size: 40px;
-  font-weight: 400;
+  font-weight: 500;
   letter-spacing: -0.5px;
   color: #1f1f1f;
   margin-bottom: 12px;
 }
 
 .hero-subtitle {
-  font-size: 15.5px;
+  font-size: 16px;
   color: var(--text-secondary);
-  max-width: 620px;
-  line-height: 1.6;
+  max-width: 650px;
+  line-height: 1.5;
+  margin-bottom: 0;
 }
 
 /* Chat Messages */
@@ -386,8 +408,9 @@ body {
   margin: 14px 0;
   border-radius: 10px;
   overflow: hidden;
-  background: var(--code-bg);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  background: #1e1e24;
+  border: 1px solid #2d2d38;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
 }
 
 .code-header {
@@ -412,6 +435,7 @@ body {
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 4px;
+  transition: all 0.2s ease;
 }
 
 .code-header button:hover {
@@ -421,12 +445,42 @@ body {
 
 .code-container pre {
   margin: 0;
-  padding: 14px;
+  padding: 14px 16px;
   overflow-x: auto;
   font-size: 13.5px;
-  font-family: Consolas, Monaco, 'Courier New', monospace;
-  line-height: 1.5;
+  font-family: 'Consolas', 'Fira Code', Monaco, 'Courier New', monospace;
+  line-height: 1.6;
+  background: transparent !important;
 }
+
+/* 코드 블록 텍스트 가독성 완전 보장: 어두운 배경에 밝은 텍스트 및 문법 하이라이팅 */
+.code-container pre,
+.code-container pre code {
+  color: #f1f5f9 !important;
+  font-family: 'Consolas', 'Fira Code', Monaco, 'Courier New', monospace;
+  background: transparent !important;
+}
+
+.code-container pre code.hljs {
+  background: transparent !important;
+  padding: 0 !important;
+  color: #e2e8f0 !important;
+}
+
+/* One Dark 문법 하이라이팅 테마 */
+.code-container pre code .hljs-keyword,
+.code-container pre code .hljs-selector-tag { color: #c678dd !important; font-weight: 500; }
+.code-container pre code .hljs-string,
+.code-container pre code .hljs-attribute { color: #98c379 !important; }
+.code-container pre code .hljs-number,
+.code-container pre code .hljs-literal { color: #d19a66 !important; }
+.code-container pre code .hljs-function,
+.code-container pre code .hljs-title { color: #61afef !important; }
+.code-container pre code .hljs-comment { color: #7f848e !important; font-style: italic; }
+.code-container pre code .hljs-variable,
+.code-container pre code .hljs-params { color: #e06c75 !important; }
+.code-container pre code .hljs-type,
+.code-container pre code .hljs-class { color: #e5c07b !important; }
 
 /* Typing cursor for stream */
 .typing-cursor {
@@ -441,13 +495,28 @@ body {
 
 /* Input Section & Pill Bar */
 .input-section {
+  z-index: 30;
+  transition: all 0.3s ease;
+}
+
+/* 초기 화면: 바닥 고정 대신 hero 바로 아래에 자연스럽게 밀착 배치 */
+.gemini-app:not(.has-chat) .input-section {
+  position: static;
+  background: transparent;
+  backdrop-filter: none;
+  padding: 0 20px 40px 20px;
+  margin: 0;
+  width: 100%;
+}
+
+/* 대화 진행 시: 화면 하단에 플로팅 고정 */
+.gemini-app.has-chat .input-section {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   background: linear-gradient(180deg, rgba(248, 250, 253, 0) 0%, rgba(248, 250, 253, 0.95) 25%, #f8fafd 100%);
   padding: 12px 20px 16px 20px;
-  z-index: 30;
   backdrop-filter: blur(8px);
 }
 

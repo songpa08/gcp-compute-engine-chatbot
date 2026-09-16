@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let isGenerating = false;
 
   // DOM 요소
+  const geminiApp = document.querySelector('.gemini-app');
   const welcomeHero = document.getElementById('welcomeHero');
   const chatMessages = document.getElementById('chatMessages');
   const mainContainer = document.getElementById('mainContainer');
@@ -141,6 +142,10 @@ document.addEventListener('DOMContentLoaded', () => {
   async function sendMessage() {
     const text = userInput.value.trim();
     if (!text || isGenerating) return;
+
+    if (geminiApp) {
+      geminiApp.classList.add('has-chat');
+    }
 
     if (suggestionCellsContainer) {
       suggestionCellsContainer.style.display = 'none';
@@ -330,8 +335,17 @@ document.addEventListener('DOMContentLoaded', () => {
     element.innerHTML = cleanHtml;
 
     element.querySelectorAll('pre code').forEach((codeBlock) => {
+      // 구문 강조 하이라이팅 적용
+      if (window.hljs) {
+        try {
+          hljs.highlightElement(codeBlock);
+        } catch (e) {
+          console.warn('highlightElement warning:', e);
+        }
+      }
+
       const pre = codeBlock.parentElement;
-      if (pre.parentElement.classList.contains('code-container')) return;
+      if (pre.parentElement && pre.parentElement.classList.contains('code-container')) return;
 
       const langClass = Array.from(codeBlock.classList).find(c => c.startsWith('language-'));
       const langName = langClass ? langClass.replace('language-', '') : 'code';
@@ -383,6 +397,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function resetChat() {
     if (isGenerating) return;
+    if (geminiApp) {
+      geminiApp.classList.remove('has-chat');
+    }
     chatMessages.innerHTML = '';
     chatMessages.style.display = 'none';
     welcomeHero.style.display = 'flex';

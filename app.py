@@ -5,17 +5,31 @@ from pathlib import Path
 from typing import Optional, List
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 
 from google import genai
+from google.cloud import secretmanager
 
-# .env 환경변수 로드
+# .env 환경변수 로드 (로컬 테스트용)
 load_dotenv()
 
-app = FastAPI(title="Google Gemini Interactions Web Chatbot")
+app = FastAPI(title="Google Gemini Cloud Run Web Chatbot")
+
+# 브라우저 정적 자원 최신 유지 미들웨어 (강력 캐시 방지)
+class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/") or request.url.path == "/":
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+app.add_middleware(NoCacheStaticMiddleware)
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -47,8 +61,8 @@ CACHED_API_KEY = None
 
 def get_gemini_api_key() -> str:
     """
-    1. 환경변수 확인
-    2. GCP Secret Manager (projects/298843281819/secrets/GEMINI_API_KEY) 확인
+    1. 환경변수 확인 (Cloud Run Secret 매핑 또는 .env)
+    2. GCP Secret Manager SDK (projects/298843281819/secrets/GEMINI_API_KEY) 확인
     """
     global CACHED_API_KEY
     if CACHED_API_KEY:
@@ -57,141 +71,152 @@ def get_gemini_api_key() -> str:
     # 1. 환경변수 확인
     env_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if env_key:
-        CACHED_API_KEY = env_key
+        CACHED_API_KEY = env_key.strip()
         return CACHED_API_KEY
 
-    # 2. GCP Secret Manager SDK로 가져오기 (GCP VM 메타데이터 인증 기반)
+    # 2. GCP Secret Manager SDK 확인 (Cloud Run 서비스 계정 권한 이용)
+    secret_name = "projects/298843281819/secrets/GEMINI_API_KEY/versions/latest"
     try:
-        from google.cloud import secretmanager
-        sm_client = secretmanager.SecretManagerServiceClient()
-        secret_name = "projects/298843281819/secrets/GEMINI_API_KEY/versions/latest"
-        response = sm_client.access_secret_version(request={"name": secret_name})
-        secret_val = response.payload.data.decode("utf-8").strip()
-        if secret_val:
-            os.environ["GEMINI_API_KEY"] = secret_val
-            CACHED_API_KEY = secret_val
-            print(f"[Secret Manager] Loaded GEMINI_API_KEY from {secret_name}")
+        client = secretmanager.SecretManagerServiceClient()
+        response = client.access_secret_version(request={"name": secret_name})
+        payload_key = response.payload.data.decode("utf-8").strip()
+        if payload_key:
+            print(f"[Secret Manager] Successfully loaded API key from {secret_name}")
+            CACHED_API_KEY = payload_key
+            os.environ["GEMINI_API_KEY"] = payload_key
             return CACHED_API_KEY
     except Exception as e:
-        print(f"[Secret Manager] Notice: Unable to load via SDK: {e}")
-
-    # 3. gcloud CLI 서브프로세스 폴백 (로컬 CLI 환경 등)
-    try:
-        import subprocess
-        res = subprocess.run(
-            ["gcloud", "secrets", "versions", "access", "latest", "--secret=GEMINI_API_KEY", "--project=iceu-songpa08"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True, shell=True
-        )
-        val = res.stdout.strip()
-        if val:
-            os.environ["GEMINI_API_KEY"] = val
-            CACHED_API_KEY = val
-            print("[Secret Manager] Loaded GEMINI_API_KEY via gcloud CLI fallback")
-            return CACHED_API_KEY
-    except Exception as sub_err:
-        print(f"[Secret Manager] Warning: Failed gcloud CLI fallback: {sub_err}")
+        print(f"[Secret Manager SDK] 로드 시도 실패: {e}")
 
     return ""
 
-@app.get("/api/models")
-async def get_models():
-    return {
-        "models": SUPPORTED_MODELS,
-        "default": "models/gemini-3.8-flash"
-    }
-
-@app.get("/api/health")
-async def health():
-    key = get_gemini_api_key()
-    return {"status": "ok", "has_api_key": bool(key)}
-
-def run_gemini_interaction(user_input: str, model_name: str):
+def run_gemini_interaction(user_input: str, model_id: str = "models/gemini-3.8-flash"):
     """
-    사용자가 지정한 interactions.create 코드를 정확히 실행하는 챗봇 엔진 함수
+    Interactions API 기반 Gemini 실행 (Google Search Grounding 탑재)
     """
     api_key = get_gemini_api_key()
     if not api_key:
-        raise ValueError("GEMINI_API_KEY를 환경변수 또는 Secret Manager에서 찾을 수 없습니다.")
+        raise ValueError("GEMINI_API_KEY를 찾을 수 없습니다. Secret Manager 권한 또는 환경변수를 확인해주세요.")
 
-    # 1. Client 초기화
-    client = genai.Client(
-        api_key=api_key,
-    )
+    client = genai.Client(api_key=api_key)
 
-    # 2. Tools 설정 (구글 검색)
     tools = [
         {
             'type': 'google_search',
         },
     ]
 
-    # 3. Generation Config 설정
     generation_config = {
         'max_output_tokens': 65536,
         'thinking_level': 'medium',
     }
 
-    # 4. Interactions API 호출
     interaction = client.interactions.create(
-        model=model_name,
+        model=model_id,
         input=user_input,
         tools=tools,
         generation_config=generation_config,
     )
 
-    # 5. 결과 파싱 (interaction.steps 분석)
-    last_step = interaction.steps[-1]
-    print(f"[Interaction Result] Last step type: {getattr(last_step, 'type', 'unknown')}")
+    final_step = interaction.steps[-1] if interaction.steps else None
 
-    # 최종 텍스트 추출
-    reply_text = ""
-    if hasattr(last_step, "content") and last_step.content:
-        for c in last_step.content:
-            if hasattr(c, "text") and c.text:
-                reply_text += c.text
-    elif hasattr(last_step, "text") and last_step.text:
-        reply_text = last_step.text
-
-    # 검색 출처 및 추론(Thinking) 과정 추출
-    sources = []
+    # 응답 텍스트 및 사고과정 추출
+    text_content = ""
     thoughts = []
-    seen_uris = set()
+    sources = []
 
-    for step in interaction.steps:
-        step_type = getattr(step, 'type', '')
+    if final_step:
+        # 모델 본문 텍스트 및 annotations 추출
+        content_val = getattr(final_step, 'content', None)
+        if isinstance(content_val, list):
+            parts_text = []
+            for item in content_val:
+                # 1. 텍스트 추출 (TextContent.text)
+                if hasattr(item, 'text') and item.text:
+                    parts_text.append(str(item.text))
+                elif isinstance(item, str):
+                    parts_text.append(item)
+                
+                # 2. 검색 출처 추출 (TextContent.annotations -> URLCitation)
+                ann_list = getattr(item, 'annotations', None) or []
+                for ann in ann_list:
+                    title = getattr(ann, 'title', None) or '웹 검색 출처'
+                    url = getattr(ann, 'url', None) or getattr(ann, 'uri', None)
+                    if url and url not in [s.get('uri') for s in sources]:
+                        sources.append({'title': title, 'uri': url})
+            if parts_text:
+                text_content = "".join(parts_text)
+        elif hasattr(final_step, 'text') and final_step.text:
+            text_content = str(final_step.text)
+        elif hasattr(final_step, 'parts') and final_step.parts:
+            parts_text = []
+            for p in final_step.parts:
+                if hasattr(p, 'text') and p.text:
+                    parts_text.append(p.text)
+            if parts_text:
+                text_content = "".join(parts_text)
+        elif content_val and isinstance(content_val, str):
+            text_content = content_val
 
-        # Thinking 추출
-        if step_type == 'thought':
-            if hasattr(step, 'content'):
-                for c in step.content:
-                    if hasattr(c, 'text') and c.text:
-                        thoughts.append(c.text)
+        # Thought 과정 확인
+        if hasattr(final_step, 'thought') and final_step.thought:
+            thoughts.append(str(final_step.thought))
 
-        # 검색 결과 추출
-        if hasattr(step, 'content'):
-            for c in step.content:
-                if hasattr(c, 'annotations') and c.annotations:
-                    for ann in c.annotations:
-                        uri = getattr(ann, 'uri', None)
-                        title = getattr(ann, 'title', None) or uri
-                        if uri and uri not in seen_uris:
-                            seen_uris.add(uri)
-                            sources.append({"title": title, "uri": uri})
+    # 검색 출처(Sources / Grounding Metadata) 추출
+    try:
+        for step in interaction.steps:
+            if hasattr(step, 'grounding_metadata') and step.grounding_metadata:
+                gm = step.grounding_metadata
+                chunks = getattr(gm, 'grounding_chunks', None) or []
+                for chunk in chunks:
+                    web = getattr(chunk, 'web', None)
+                    if web:
+                        title = getattr(web, 'title', '웹 검색 결과')
+                        uri = getattr(web, 'uri', '')
+                        if uri and uri not in [s.get('uri') for s in sources]:
+                            sources.append({'title': title, 'uri': uri})
+            if hasattr(step, 'thought') and step.thought and str(step.thought) not in thoughts:
+                thoughts.append(str(step.thought))
+    except Exception as parse_err:
+        print(f"[Grounding Parse Warning] {parse_err}")
+
+    if not text_content:
+        text_content = str(final_step)
 
     return {
-        "text": reply_text,
+        "text": text_content,
         "thoughts": thoughts,
         "sources": sources,
-        "steps_count": len(interaction.steps),
+        "model": model_id,
+        "raw_step": str(final_step)
+    }
+
+# API 엔드포인트들
+@app.get("/api/health")
+async def health_check():
+    """Cloud Run Startup / Liveness 헬스체크"""
+    key = get_gemini_api_key()
+    return {
+        "status": "ok",
+        "has_api_key": bool(key),
+        "service": "cloud-run"
+    }
+
+@app.get("/api/models")
+async def list_models():
+    """지원 AI 모델 목록"""
+    return {
+        "models": SUPPORTED_MODELS,
+        "default": "models/gemini-3.8-flash"
     }
 
 @app.post("/api/chat")
-async def chat_endpoint(request: ChatRequest):
-    """사용자가 지정한 client.interactions.create 로직으로 응답 생성"""
+async def chat_interaction(request: ChatRequest):
+    """Gemini Interactions 대화 생성"""
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="메시지가 비어있습니다.")
 
-    model_name = request.model
+    model_name = request.model or "models/gemini-3.8-flash"
     if not model_name.startswith("models/"):
         model_name = f"models/{model_name}"
     
@@ -225,9 +250,11 @@ async def serve_index():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
-    return {"message": "Gemini Chatbot Web Service is running."}
+    return {"message": "Gemini Chatbot Web Service on Cloud Run is running."}
 
 if __name__ == "__main__":
-    # pyrefly: ignore [missing-import]
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    # Cloud Run은 환경변수 PORT를 주입합니다 (기본값: 8080)
+    port = int(os.environ.get("PORT", 8080))
+    print(f"Starting Cloud Run Chatbot on port {port}...")
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
