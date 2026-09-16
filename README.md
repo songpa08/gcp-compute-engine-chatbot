@@ -94,7 +94,7 @@ graph LR
 ├── deployment_log.md              # 클라우드 배포 및 HTTPS 구성 전 과정 상세 로그
 ├── CODE_SUMMARY.md                # 주요 소스 코드 구조 및 핵심 코드 마크다운 정리
 └── 챗봇/
-    └── gcp-compute-engine-chatbot/
+    └── compute_engine/
         ├── app.py                 # FastAPI 백엔드 (Interactions API, Secret Manager, Search)
         ├── run.py                 # 로컬 서버 실행 스크립트
         ├── start.bat              # 윈도우 원클릭 실행기
